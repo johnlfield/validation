@@ -1,9 +1,31 @@
 
+# Copy Python list contents into SQLite database table
+# assumes a 3-row header:  column names, SQLite datatypes, and units (this one is ignored)
+def PyListoDB(list, dbfile, dbtable):
+    import sqlite3 as lite
+    dropquery = "DROP TABLE IF EXISTS "+dbtable
+    headerquery = "CREATE TABLE "+dbtable+"("
+    insertquery = "INSERT INTO "+dbtable+" VALUES("
+    for e in range(len(list[0])):           #transform column names & datatypes to string
+        headerquery = headerquery+list[0][e]+" "+list[1][e]+", "
+    headerquery = headerquery[:-2]+')'
+    insertquery = insertquery+e*"?, " + "?)" 
+    #simplify python list, deleting initialization row and three header rows
+    for i in range(3):
+        del list[0]
+    #copy python list contents to a DB table
+    #SQL table write structure from http://zetcode.com/db/sqlitepythontutorial/
+    con = lite.connect(dbfile)              #establish database connection
+    with con:
+        cur = con.cursor()
+        cur.execute(dropquery)
+        cur.execute(headerquery)
+        cur.executemany(insertquery, list)
+        
 # Copy CSV file contents into a SQLite database table 
 def CSVtoDB(csvfile, dbfile, delim):
-#arguments- CSV and DB filenames, NO EXTENSION!, delimiter: c=comma, t=tab
+#arguments- CSV and DB filenames (incl. extensions!), delimiter: c=comma, t=tab
     import csv
-    import sqlite3 as lite
     #copy CSV file contents into a python list
     if delim == "c":
         Lines = csv.reader(open(csvfile, 'rb'))
@@ -13,26 +35,48 @@ def CSVtoDB(csvfile, dbfile, delim):
     for x in Lines:
         List.append(x)
     #define SQL-format strings to create & populate table
-    csv = csvfile[:-4]
-    headerquery = "CREATE TABLE "+csv+"("
-    insertquery = "INSERT INTO "+csv+" VALUES("
-    dropquery = "DROP TABLE IF EXISTS "+csv
-    for i in range(len(List[1])):           #transform column names & datatypes to string
-        headerquery = headerquery+List[1][i]+" "+List[2][i]+", "
-    headerquery = headerquery[:-2]+')'
-    insertquery = insertquery+i*"?, " + "?)" 
-    #clean up python list, deleting initialization row and three header rows
-    for i in range(4):
-        del List[0]
-    #copy python list contents to a DB table
-    #SQL table write structure from http://zetcode.com/db/sqlitepythontutorial/
-    con = lite.connect(dbfile)              #establish database connection
-    with con:
-        cur = con.cursor()
-        cur.execute(dropquery)
-        cur.execute(headerquery)
-        cur.executemany(insertquery, List)
+    dbtable = csvfile[:-4]
+    del List[0]
+    PyListoDB(List, dbfile, dbtable)
 
+#plot measured versus modeled results, broken down by ecotype
+def MMplot (meas, mod, measU, modU, measL, modL, measQ, modQ, filename):
+    import matplotlib.pyplot as plt
+    from scipy import stats
+    plt.plot([0,30], [0,30])       
+    plt.plot(measL, modL, 'go', label='Lowland')
+    plt.plot(measU, modU, 'ro', label='Upland')
+    plt.plot(measQ, modQ, 'bo', label='unspecified')
+    plt.legend()
+    plt.title(filename[:-4])
+    plt.xlabel('Measured switchgrass yield (dry Mg/ha)')
+    plt.ylabel('Modeled switchgrass yield (dry Mg/ha)')
+    slope, intercept, r_value, p_value, std_err = stats.linregress(meas,mod)
+    plt.text(2, 26, 'Combined regression statistics: \nPearson correlation coefficient=%s \
+                     \nP-value=%s' % (round(r_value,3),round(p_value,4)))
+    plt.savefig(filename)
+    plt.close()
+
+#plot error regressed versus X
+def EvXplot (error, regressor, label, filename):
+    import matplotlib.pyplot as plt
+    from scipy import stats      
+    plt.plot(regressor, error, 'go')
+    plt.title(filename[:-4])
+    plt.xlabel(label)
+    plt.ylabel('Error')
+    slope, intercept, r_value, p_value, std_err = stats.linregress(regressor,error)
+    miny=min(error)
+    maxy=max(error)
+    minx=min(regressor)
+    maxx=max(regressor)
+    plt.text(.03*(maxx-minx)+minx, .95*(maxy-miny)+miny, 'Combined regression statistics: \
+             \nPearson correlation coefficient=%s \nP-value=%s' \
+             % (round(r_value,3),round(p_value,4)))
+    plt.plot([minx,maxx], [intercept+slope*minx,intercept+slope*maxx])
+    plt.savefig(filename)
+    plt.close()
+    
 
 ### HEADER
 print
@@ -59,20 +103,21 @@ print
 
 
 ### RUNTABLE BULDER
-print "If you would like to generate a new DayCent runtable, please enter the runtable"
+import os
+Database = "switch.db"
+abspath = os.path.abspath(__file__)     #get absolute path where script is located
+dname = os.path.dirname(abspath)        #associated directory only
+os.chdir(dname)
+os.chdir('..')
+os.chdir('..')                          #navigate TWO directories higher
+dirmain = os.getcwd()
+print "If you would like to generate a new DayCent runtable, please enter the RUNTABLE"
 print "archive number to use:"
 runarch = raw_input()
 if runarch != "":
     #specification of all relevant directory paths
-    import os
     import glob
     import shutil
-    abspath = os.path.abspath(__file__)     #get absolute path where script is located
-    dname = os.path.dirname(abspath)        #associated directory only
-    os.chdir(dname)
-    os.chdir('..')
-    os.chdir('..')                          #navigate TWO directories higher
-    dirmain = os.getcwd()
     dirrun = dirmain+"/runtable/"+runarch
     print "Please type a descriptive filename (no spaces or file extension) for this runtable:"
     title = raw_input()
@@ -91,7 +136,6 @@ if runarch != "":
         os.chdir(dirmain)         
         print "Copying runtable CSV files to SQLite database tables..."
         print
-        Database = "switch.db"
         CSVtoDB("Sites.csv", Database, "c")
         CSVtoDB("Treatments.csv", Database, "c")
         CSVtoDB("Yields.csv", Database, "c")
@@ -134,190 +178,216 @@ if runarch != "":
 
 
 ### RESULTS ANALYSIS
-print "If you would like to analyze a DayCent results archive against 'Yields.csv',"
-print "please enter the results archive number to use:"
-analysis = raw_input()
-if analysis != "":
+print "If you would like to analyze a DayCent results archive against a dataset of field"
+print "trial yield results, please enter the RUNTABLE archive number where the appropriate"
+print "'Yield.csv' file can be found:"
+runarch = raw_input()
+if runarch != "":
+    print "And the RESULTS archive number you wish to compare:"
+    resarch = raw_input()
+    dirres = dirmain+"/results/"+resarch
+    dirrun = dirmain+"/runtable/"+runarch
     print
     script = os.path.basename(__file__)
-    print "Code version:  ", script
+    print "Analysis code version:  ", script
     print
-    print "ANALYSIS goes here... :)"
+
+    # import, label, concatenate & copy .lis files to SQLite database
+    os.chdir(dirres)
+    import glob
+    import numpy as np
+    i = 1
+    for f in glob.glob(os.path.join(dirres, '*')):
+        if f.endswith(".lis"):                       #for each .lis file in the archive 
+            g = open(f)
+            lines = g.readlines()
+            labels = lines[1].split()
+            base = os.path.basename(f)
+            filename = os.path.splitext(base)[0]     #split off the filename       
+            id = filename.split("_")
+            npdata = np.genfromtxt(f, skip_header=3) #import .lis data as numpy array
+            listdata = npdata.tolist()               #convert numpy array to Python list
+            for row in listdata:
+                year = row[0]
+                year = int(year)-1
+                row[0] = year
+                row.insert(0, id[2])                 #add treatment ID to each entry
+                row.insert(0, id[1])
+                row.insert(0, id[0])
+            del listdata[0]                          #delete the first row (DDC repeat)
+            if i == 1:
+                DDClis = listdata                    #initialize with first .lis file
+            else:
+                DDClis = DDClis+listdata             #concatenate files
+            i += 1
+    header = ['Study', 'Site', 'Treatment'] + labels
+    columns = len(header)
+    header2 = ['TEXT', 'TEXT','TEXT']
+    for i in range(columns-3):
+        header2.append('INT')
+    header3 = ['']
+    for i in range(columns-1):
+        header3.append('')    
+    DDClis.insert(0, header3)
+    DDClis.insert(0, header2)
+    DDClis.insert(0, header)
+    print "Copying DayCent results to SQLite database table..."
     print
-    print    
+    os.chdir(dirmain)
+    PyListoDB(DDClis, Database, 'Modeled')
 
+    #copy average yields from 'Yields.cvs' to SQLite database
+    os.chdir(dirrun)
+    import csv
+    avgyields = csv.reader(open('Yields.csv', 'rb'))        #import yields.csv
+    avgmeas = [[]]
+    for row in avgyields:                 #convert each row of csv file values to a list element
+        entry = [row[0], row[1], row[2], row[3]]
+        avgmeas.append(entry)
+    del avgmeas[0]
+    print "Copying measured yield values to SQLite database table..."
+    print
+    os.chdir(dirmain)
+    PyListoDB(avgmeas, Database, 'Avg_meas')
+    
+    #expand and copy annual yields from 'Yields.cvs' to SQLite database
+    os.chdir(dirrun)
+    annmeas = [['Study','Site','Treatment','Year','Yield'], \
+               ['TEXT','TEXT','TEXT','INT','REAL'], ['','','','','']]
+    annyields = csv.reader(open('Yields.csv', 'rb'))        #import yields.csv
+    #copy results into a temporary Python table for easier manipulation
+    temp = [[]]
+    for row in annyields:
+        temp.append(row)
+    del temp[0]
+    i=0
+    for row in temp:
+        if i>2:
+            j = 0
+            for col in range(24):
+                entry = [temp[i][0], temp[i][1], temp[i][2], temp[0][j+4], temp[i][j+4]]
+                annmeas.append(entry)
+                j += 1
+        i += 1
+    os.chdir(dirmain)
+    PyListoDB(annmeas, Database, 'Ann_meas')
 
+    #query all annual measured yields, modeled yields, and supporting metadata
+    c_conc = 0.45                          #define biomass carbon concentration
+    logfile = "Log.txt"
+    import csv
+    import sqlite3 as lite
+    con = lite.connect(Database)
+    with con:
+        cur = con.cursor()
+        cur.execute("SELECT a.Study, a.Site, a.Treatment, t.Ecotype, s.Lat, s.Long, \
+                     s.Avg_precip, s. Avg_GDD, s.sand, s.NI_LCC, t.SGN1_rate, t.Harv_DOY, \
+                     a.Year, a.Yield, (m.crmvst/.45)*0.01, \
+                     ((((m.crmvst/%s)*0.01)-a.Yield)/a.Yield) \
+                     FROM Ann_meas a \
+                     JOIN Modeled m ON a.Study=m.Study AND a.Site=m.Site AND \
+                          a.Treatment=m.Treatment AND a.Year=m.time \
+                     JOIN Sites s ON s.Study=a.Study AND s.Site=a.Site \
+                     JOIN Treatments t ON t.Study=a.Study AND t.Treatment=a.Treatment \
+                     WHERE a.Yield>0" % (c_conc))
+        rows = cur.fetchall()
+        c = csv.writer(open(logfile, "wb"))
+        
+###update so that all .csv tables are re-loaded to the DB along with Yield.csv
+## add metadata print out here!!!!
+        print "Results log being saved as '"+logfile+"'..."
+        print
+        Eco=[]
+        Lat=[]
+        Long=[]
+        Precip=[]
+        GDD=[]
+        Sand=[]
+        LCC=[]
+        Nrate=[]
+        HarvDay=[]
+        Meas=[]
+        Mod=[]
+        MeasU=[]
+        ModU=[]
+        MeasL=[]
+        ModL=[]
+        MeasQ=[]
+        ModQ=[]
+        Error=[]
+        for row in rows:
+            Eco.append(row[3])
+            Lat.append(row[4])
+            Long.append(row[5])
+            Precip.append(row[6])
+            GDD.append(row[7])
+            Sand.append(row[8])
+            LCC.append(row[9])
+            Nrate.append(row[10])
+            HarvDay.append(row[11])
+            Meas.append(row[13])
+            Mod.append(row[14])
+            Error.append(row[15])
+            if row[3]=='U':
+                MeasU.append(row[13])
+                ModU.append(row[14])
+            elif row[3]=='L':
+                MeasL.append(row[13])
+                ModL.append(row[14])
+            else:
+                MeasQ.append(row[13])
+                ModQ.append(row[14])
+            c.writerow(row)
 
+    #query treatment-averaged results
+    with con:
+        cur = con.cursor()
+        cur.execute("SELECT a.Study, a.Site, a.Treatment, t.Ecotype, a.Avg_yield, \
+                     AVG((m.crmvst/%s)*0.01), \
+                     AVG(((((m.crmvst/.45)*0.01)-a.Avg_yield)/a.Avg_yield)) \
+                     FROM Avg_meas a \
+                     JOIN Modeled m ON a.Study=m.Study AND a.Site=m.Site \
+                                    AND a.Treatment=m.Treatment \
+                     JOIN Treatments t ON a.Study=t.Study \
+                                    AND a.Treatment=t.Treatment\
+                     GROUP BY a.Study, a.Site, a.Treatment \
+                     ORDER BY a.Study, a.Site, a.Treatment" % (c_conc))
+        rows = cur.fetchall()
+        c = csv.writer(open(logfile, "a"))
+        print "Results log '"+logfile+"' being updated..."
+        print
+        Meas_avg=[]
+        Mod_avg=[]
+        MeasU_avg=[]
+        ModU_avg=[]
+        MeasL_avg=[]
+        ModL_avg=[]
+        MeasQ_avg=[]
+        ModQ_avg=[]
+        for row in rows:
+            Meas_avg.append(row[4])
+            Mod_avg.append(row[5])
+            if row[3]=='U':
+                MeasU_avg.append(row[4])
+                ModU_avg.append(row[5])
+            elif row[3]=='L':
+                MeasL_avg.append(row[4])
+                ModL_avg.append(row[5])
+            else:
+                MeasQ_avg.append(row[4])
+                ModQ_avg.append(row[5])            
+            c.writerow(row)
 
-
-
-# ### AUTOMATED DATA ANALYSIS
-# 
-# ### IMPORT, LABEL & CONCATENATE .LIS FILES
-# os.chdir(dirarch)
-# import numpy as np
-# print
-# print "Analyzing model runs for treatments:"
-# i = 1
-# for file in glob.glob(os.path.join(dirarch, '*')):
-#     if file.endswith(".lis"):                        #for each .lis file in the archive 
-#         base=os.path.basename(file)
-#         filename = os.path.splitext(base)[0]         #split off the filename       
-#         print filename
-#         npdata = np.genfromtxt(file, skip_header=3)  #import .lis data as numpy array
-#         listdata = npdata.tolist()                   #convert numpy array to Python list
-#         for row in listdata:
-#             row.insert(0, filename)                  #add treatment ID to each entry
-#             row.append(0)                            #add a placeholder for measured yield
-#         if i == 1:
-#             table = listdata                         #initialize 'table' with first .lis file
-#         else:
-#             table = table+listdata                   #concatenate files
-#         i += 1
-# print
-# 
-# ### DELETE REDUNDENT .LIS ENTRIES, CONVERT CRMVST TO YIELD, REINDEX YEARS
-# redun = True
-# row = 0
-# while row < (len(table)-1):                          #loop through the table
-#     for i in range(3):
-#         if table[row][i] != table[row+1][i]:         #if the first 4 elements are identical
-#             redun = False                            #from this row to the next
-#     if redun == True:
-#         del table[row+1]                             #delete the next row
-#     row += 1
-# c_conc = 0.45                                        #define biomass carbon concentration
-# for row in range(len(table)):
-#     crmvst = table[row][6]                           #extract crmvst
-#     year = table[row][1]
-#     Mgha = round((crmvst/c_conc)*(1/100.0), 3)       #gC/m2 -> MgdryBM/ha unit conversion
-#     table[row][6] = Mgha                             #replace crmvst with yield
-#     year = int(year)-1                               #round and index back 1 year
-#     table[row][1] = year                             #replace original year with reindexed
-#  
-# ### IMPORT MEASURED YIELDS, JOIN TO MODEL RESULTS
-# os.chdir(dirmain)
-# import csv
-# yields = csv.reader(open('yields.csv', 'rb'))        #import yields.csv
-# tab = [[]]                         #list to receive measurements (all years of a treatment)
-# for row in yields:                 #convert each row of csv file values to a list element
-#     tab.append(row)
-# del tab[0]                         #delete the initialization row
-# yie = [[]]                         #new list to receive separate entries for every year
-# for row in range(len(tab)):        #loop through each treatment in tab[]
-#     year = 1990
-#     base = 1989
-#     treat = tab[row][0]                     #extract the treatment name
-#     while year <= 2013:                     #loop through every year w/in that treatment
-#         meas = float(tab[row][year-base])   #extract the associated yield measurement as a float
-#         if meas != 0.0:                     #if biomass was recorded that year    
-#             entry = [treat, year, meas, 0]  #create a treatment-year-yield-modeled(placeholder) list
-#             yie.append(entry)               #append to re-formatted 'measured' yields array
-#         year += 1
-# del yie[0]                                  #delete the initialization row
-# for measu in range(len(yie)):               #for each entry in 'measured' yields array
-#     for mod in range(len(table)):           #loop through every table entry
-#         if yie[measu][0]==table[mod][0] and yie[measu][1]==table[mod][1]:     #if treat+year match
-#             yie[measu][3] = table[mod][6]   #extract modeled yield, write to the placeholder       
-# for j in range(10):         ### cheated here; 10 is an arbitrary # of loops cause I didn't have logic figured out...
-#     i = 0
-#     while i < len(yie):                             
-#         if yie[i][3] == 0:
-#             del yie[i]                      #get rid of entries where no modeled data available
-#         i += 1
-# print "Comparison points:"
-# print "  (all yields in dry Mg/ha)"  
-# print "[treatment, year, measured yield, modeled yield]:"
-# for row in yie:
-#     print row
-# print
-# 
-# ### remaining piece #3 add capability to save a results file
-# 
-# ### ANALYZE & PLOT RESULTS
-# #decompose final datatable yie[]
-# treat = [[]]
-# year = [[]]
-# meas =[[]]
-# mod = [[]]
-# for i in range(len(yie)):
-#     treat.append(yie[i][0])
-#     year.append(yie[i][1])
-#     meas.append(yie[i][2])
-#     mod.append(yie[i][3])
-# del meas[0]
-# del mod[0]
-# del treat[0]
-# #generate datatable of averages across years for each treatment
-# treatuniq = set(treat)            #list unique treatments by converting to set
-# treatset = list(treatuniq)        #convert back to list format
-# measavgs = [[]]
-# modavgs = [[]]
-# for treat in treatset:            #for every unique treatment
-#     measset = [[]]
-#     modset = [[]]
-#     for i in range(len(yie)):     #loop through yie[] and list matching meas, mod results
-#         if yie[i][0] == treat:
-#             measset.append(yie[i][2])
-#             modset.append(yie[i][3])
-#     del measset[0]
-#     del modset[0]
-#     measavg = np.mean(measset)   #average across those lists
-#     modavg = np.mean(modset)
-#     measavgs.append(measavg)
-#     modavgs.append(modavg)
-# del measavgs[0]
-# del modavgs[0]
-# #compute annual, treatment-averaged RMSE values
-# def rmse(listmeas,listmod):
-#     sqerr = 0
-#     for i in range(len(listmeas)):
-#         sqerr += (listmod[i]-listmeas[i])**2
-#     return (sqerr/float(len(listmeas)))**0.5
-# RMSEannual = rmse(meas,mod)
-# RMSEavg = rmse(measavgs,modavgs)
-# #plot treatment averages
-# import matplotlib.pyplot as plt
-# plt.plot([0,25], [0,25])       
-# plt.plot(measavgs, modavgs, 'ro')
-# ###turn on point labeling by un-commenting below
-# #for i in range(len(yie)):
-# #    plt.annotate(treatset[i], xy = (measavgs[i], modavgs[i]), fontsize=7)
-# plt.title(descr+", treatment averages")
-# plt.xlabel('Measured switchgrass yield (dry Mg/ha)')
-# plt.ylabel('Modeled switchgrass yield (dry Mg/ha)')
-# plt.text(2, 21, "RMSE = "+str(round(RMSEavg,3))+" Mg/ha")
-# os.chdir(dirarch)
-# plt.show()
-# sec = round((time.time() - start), 2)
-# plt.savefig('Mod-v-meas(averaged).png')
-# plt.close()
-# #plot individual years
-# plt.plot([0,25], [0,25])       
-# plt.plot(meas, mod, 'ro')
-# ###turn on point labeling by un-commenting below
-# #for i in range(len(yie)):
-# #    plt.annotate(treat[i], xy = (meas[i], mod[i]), fontsize=7)
-# plt.title(descr+", annual results")
-# plt.xlabel('Measured switchgrass yield (dry Mg/ha)')
-# plt.ylabel('Modeled switchgrass yield (dry Mg/ha)')
-# plt.text(2, 21, "RMSE = "+str(round(RMSEannual,3))+" Mg/ha")
-# os.chdir(dirarch)
-# plt.show()
-# plt.savefig('Mod-v-meas(annual).png')
-# 
-# ### RUN SUMMARY
-# secpertreat = round(sec/treatcount, 2)
-# min = round(sec/60.0, 2)
-# sec = str(sec)
-# secpertreat = str(secpertreat)
-# min = str(min)
-# treatcount = str(treatcount)
-# if bool(nospin) == True:
-#     text = "appending *.bin files from archive "+tstamp+"."
-# else:
-#     text = "including full spin-ups."
-# print "Analysis complete."
-# print "It took "+min+" minutes total to run the "+treatcount+" treatments ("+secpertreat+" sec/treatment),"
-# print text
-# print
+    #plot results
+    MMplot(Meas, Mod, MeasU, ModU, MeasL, ModL, MeasQ, ModQ, \
+           "Measured-v-modeled_annual.png")
+    MMplot(Meas_avg, Mod_avg, MeasU_avg, ModU_avg, MeasL_avg, ModL_avg, MeasQ_avg, \
+           ModQ_avg, "Measured-v-modeled_treatment-averaged.png")
+    EvXplot (Error, Lat, 'Latitude (deg)', "Error-v-Latitude.png")
+    EvXplot (Error, Long, 'Longitude (deg)', "Error-v-Longitude.png")
+    EvXplot (Error, Precip, 'Average annual precipitation (cm/y)', "Error-v-Precip.png")
+    EvXplot (Error, GDD, 'Average annual growing degree days (GDD)', "Error-v-GDD.png")
+    EvXplot (Error, Sand, 'Soil sand fraction (%)', "Error-v-Sand.png")
+    EvXplot (Error, LCC, 'Non-irrigated land capability class rating (LCC)', "Error-v-LCC.png")
+    EvXplot (Error, Nrate, 'Nitrogent application rate (gN/m2)', "Error-v-N.png")
+    EvXplot (Error, HarvDay, 'Harvest day of the year', "Error-v-Harv.png")
