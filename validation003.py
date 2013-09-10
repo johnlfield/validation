@@ -70,7 +70,7 @@ def MMplot (meas, mod, measU, modU, measL, modL, measQ, modQ, descrip, filename)
                      \nRMSE=%s \nn=%s' % (round(r_value,3),round(p_value,4),\
                      round(r_value**2,3),round(RMSE,3),n))
     plt.plot([minx,maxx], [intercept+slope*minx,intercept+slope*maxx], color="grey")
-    plt.savefig(filename)
+    plt.savefig(tstamp+"_"+filename)
     plt.close()
     return "n="+str(n)+", R2="+str(round(r_value**2,3))+", RMSE="+str(round(RMSE,3))
 
@@ -83,15 +83,16 @@ def EvXplot(resid, regressor, label, descrip, filename):
     plt.xlabel(label)
     plt.ylabel('Residual yield error (dry Mg/ha)')
     slope, intercept, r_value, p_value, std_err = stats.linregress(regressor,resid)
+    n = len(resid)
     miny=min(resid)
     maxy=max(resid)
     minx=min(regressor)
     maxx=max(regressor)
-    plt.text(.03*(maxx-minx)+minx, .95*(maxy-miny)+miny, 'Combined regression statistics: \
-             \nPearson correlation coefficient=%s \nP-value=%s' \
-             % (round(r_value,3),round(p_value,4)))
+    plt.text(.03*(maxx-minx)+minx, .8*(maxy-miny)+miny, 'Combined regression statistics: \
+             \nPearson correlation coefficient=%s \nP-value=%s \nn=%s' \
+             % (round(r_value,3),round(p_value,4),n))
     plt.plot([minx,maxx], [intercept+slope*minx,intercept+slope*maxx])
-    plt.savefig(filename)
+    plt.savefig(tstamp+"_"+filename)
     plt.close()
     
 
@@ -218,6 +219,13 @@ if runarch != "":
     script = os.path.basename(__file__)
     print "Analysis code version:  ", script
     print
+    os.chdir(dirres)
+    import glob
+    for g in glob.glob(os.path.join(dirres, '*')):
+        if g.endswith(".txt"):
+            logfile = os.path.basename(g)
+    tstamp = logfile.split("_")[0]
+    os.chdir(dirmain)
 
     # import, label, concatenate & copy .lis files to SQLite database
     os.chdir(dirres)
@@ -319,7 +327,7 @@ if runarch != "":
                      ORDER BY abs(((m.crmvst/%s)*0.01)-a.Yield) DESC" \
                      % (c_conc,c_conc,c_conc))
         rows = cur.fetchall()
-        c = csv.writer(open("Annual_summary.csv", "wb"))
+        c = csv.writer(open(tstamp+"_Annual_summary.csv", "wb"))
         
 ###update so that all .csv tables are re-loaded to the DB along with Yield.csv
 ## add metadata print out here!!!!
@@ -376,19 +384,29 @@ if runarch != "":
     #query treatment-averaged results
     with con:
         cur = con.cursor()
-        cur.execute("SELECT a.Study, a.Site, a.Treatment, t.Ecotype, a.Avg_yield, \
-                     AVG((m.crmvst/%s)*0.01), \
-                     AVG(((m.crmvst/%s)*0.01)-a.Avg_yield) \
+        cur.execute("SELECT a.Study, a.Site, a.Treatment, t.Ecotype, s.Lat, s.Long, \
+                     s.Avg_precip, s. Avg_GDD, s.sand, s.NI_LCC, t.SGN1_rate, t.Harv_DOY,\
+                     a.Avg_yield, (m.crmvst/%s)*0.01, (((m.crmvst/%s)*0.01)-a.Avg_yield) \
                      FROM Avg_meas a \
                      JOIN Modeled m ON a.Study=m.Study AND a.Site=m.Site \
                                     AND a.Treatment=m.Treatment \
-                     JOIN Treatments t ON a.Study=t.Study \
-                                    AND a.Treatment=t.Treatment\
-                     WHERE m.time<2010 \
+                     JOIN Sites s ON s.Study=a.Study AND s.Site=a.Site \
+                     JOIN Treatments t ON t.Study=a.Study AND t.Treatment=a.Treatment \
+                     WHERE a.Avg_yield>0 AND m.time<2010 \
                      GROUP BY a.Study, a.Site, a.Treatment \
-                     ORDER BY a.Study, a.Site, a.Treatment" % (c_conc,c_conc))
+                     ORDER BY abs(((m.crmvst/%s)*0.01)-a.Avg_yield) DESC" \
+                     % (c_conc,c_conc,c_conc))
         rows = cur.fetchall()
-        c = csv.writer(open("Treatment-averaged_summary.csv", "wb"))
+        c = csv.writer(open(tstamp+"_Treatment-averaged_summary.csv", "wb"))
+        Eco_avg=[]
+        Lat_avg=[]
+        Long_avg=[]
+        Precip_avg=[]
+        GDD_avg=[]
+        Sand_avg=[]
+        LCC_avg=[]
+        Nrate_avg=[]
+        HarvDay_avg=[]
         Meas_avg=[]
         Mod_avg=[]
         MeasU_avg=[]
@@ -397,21 +415,33 @@ if runarch != "":
         ModL_avg=[]
         MeasQ_avg=[]
         ModQ_avg=[]
-        headerstr=['Study','Site','Treatment','Ecotype','Meas_avg_yield','Mod_avg_yield',\
-                   'Resid_error']
+        Resid_avg=[]
+        headerstr=['Study','Site','Treatment','Ecotype','Lat','Long','Avg_precip',\
+                   'Avg_GDD','sand','NI_LCC','SGN1_rate','Harv_DOY', 'Meas_yield',\
+                   'Mod_yield','Resid_error']
         c.writerow(headerstr)           
         for row in rows:
-            Meas_avg.append(row[4])
-            Mod_avg.append(row[5])
+            Eco_avg.append(row[3])
+            Lat_avg.append(row[4])
+            Long_avg.append(row[5])
+            Precip_avg.append(row[6])
+            GDD_avg.append(row[7])
+            Sand_avg.append(row[8])
+            LCC_avg.append(row[9])
+            Nrate_avg.append(row[10])
+            HarvDay_avg.append(row[11])
+            Meas_avg.append(row[12])
+            Mod_avg.append(row[13])
             if row[3]=='U':
-                MeasU_avg.append(row[4])
-                ModU_avg.append(row[5])
+                MeasU_avg.append(row[12])
+                ModU_avg.append(row[13])
             elif row[3]=='L':
-                MeasL_avg.append(row[4])
-                ModL_avg.append(row[5])
+                MeasL_avg.append(row[12])
+                ModL_avg.append(row[13])
             else:
-                MeasQ_avg.append(row[4])
-                ModQ_avg.append(row[5])            
+                MeasQ_avg.append(row[12])
+                ModQ_avg.append(row[13])            
+            Resid_avg.append(row[14])
             c.writerow(row)
 
     #plot results (incl. basic stats)
@@ -420,15 +450,14 @@ if runarch != "":
     Avg_stats = MMplot(Meas_avg, Mod_avg, \
                MeasU_avg, ModU_avg, MeasL_avg, ModL_avg, MeasQ_avg, ModQ_avg, \
                descrip, "Measured-v-modeled_treatment-averaged.png")
-    EvXplot(Resid, Lat, 'Latitude (deg)', descrip, "Error vs. Latitude.png")
-    EvXplot(Resid, Long, 'Longitude (deg)', descrip, "Error vs. Longitude.png")
-    EvXplot(Resid, Precip, 'Average annual precipitation (cm/y)', descrip, "Error vs. Average Annual Precipitation.png")
-    EvXplot(Resid, GDD, 'Average annual growing degree days (GDD)', descrip, "Error vs. Average Annual GDD.png")
-    EvXplot(Resid, Sand, 'Soil sand fraction (%)', descrip, "Error vs. Soil Sand Fraction.png")
-    EvXplot(Resid, LCC, 'Non-irrigated land capability class rating (LCC)', descrip, "Error vs. LCC.png")
-    EvXplot(Resid, Nrate, 'Nitrogen application rate (gN/m2)', descrip, "Error vs. N Rate.png")
-    EvXplot(Resid, HarvDay, 'Harvest day of the year', descrip, "Error vs. Harvest Date.png")
-    EvXplot(Resid, PEY, 'Post-establishment harvest year', descrip, "Error vs. Post-Establishment Year.png")
+    EvXplot(Resid_avg, Lat_avg, 'Latitude (deg)', descrip, "Error vs. Latitude.png")
+    EvXplot(Resid_avg, Long_avg, 'Longitude (deg)', descrip, "Error vs. Longitude.png")
+    EvXplot(Resid_avg, Precip_avg, 'Average annual precipitation (cm/y)', descrip, "Error vs. Average Annual Precipitation.png")
+    EvXplot(Resid_avg, GDD_avg, 'Average annual growing degree days (GDD)', descrip, "Error vs. Average Annual GDD.png")
+    EvXplot(Resid_avg, Sand_avg, 'Soil sand fraction (%)', descrip, "Error vs. Soil Sand Fraction.png")
+    EvXplot(Resid_avg, LCC_avg, 'Non-irrigated land capability class rating (LCC)', descrip, "Error vs. LCC.png")
+    EvXplot(Resid_avg, Nrate_avg, 'Nitrogen application rate (gN/m2)', descrip, "Error vs. N Rate.png")
+    EvXplot(Resid_avg, HarvDay_avg, 'Harvest day of the year', descrip, "Error vs. Harvest Date.png")
     
     #add to log file and archive all plots
     import shutil
@@ -438,8 +467,8 @@ if runarch != "":
         if g.endswith(".txt"):
             logfile = os.path.basename(g)    
     d = open(logfile, "a")
-    d.write("Analysis code version: "+script+'\n')
     d.write(""+'\n')
+    d.write("Analysis code version: "+script+'\n')
     d.write("Analysis description: "+descrip+'\n')
     d.write("Annual results regression stats: "+Ann_stats+'\n')
     d.write("Treatment-averaged results regression stats: "+Avg_stats)
