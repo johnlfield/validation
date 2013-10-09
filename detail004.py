@@ -109,9 +109,10 @@ def multiplot(xname, yname, x, y, divisions, divisor, dbtable, dbfile):
             fullx = fullx+addx
             fully = fully+addy
         plt.legend(prop={'size':12})
-    plt.plot([0,30], [0,30], color="black")
-    plt.plot((0,0), color="white")
-    plt.plot((0,30), color="white")
+#     plt.plot([0,35], [0,35], color="black")
+    plt.plot([1.5,1.5],[-8,8], color="white")
+    plt.plot([4.5,4.5],[-8,8], color="white")
+#     plt.plot((40,8), color="white")
     plt.title('%s vs. %s' % (yname,xname))
     plt.xlabel('%s' % (xname))
     plt.ylabel('%s' % (yname))
@@ -120,12 +121,17 @@ def multiplot(xname, yname, x, y, divisions, divisor, dbtable, dbfile):
     slope, intercept, r_value, p_value, std_err = stats.linregress(fullx,fully)
     RMSE = rmse(fullx,fully)
     n = len(fullx)
-    plt.text(2, 22, 'Combined regression: \nPearson coeff.=%s \np-value=%s \nR2=%s \
-             \nRMSE=%s \nn=%s' % (round(r_value,3),round(p_value,4),\
-             round(r_value**2,3),round(RMSE,3),n))
+    minx=min(fullx)
+    maxx=max(fullx)
+    miny=min(fully)
+    maxy=max(fully)
+    plt.plot([minx,maxx], [intercept+slope*minx,intercept+slope*maxx], color="grey")
+    plt.text(1,5.8, 'Combined regression (n=%s): \np-value=%s, R2=%s, RMSE=%s \
+             \nslope=%s, intercept=%s' % (n,round(p_value,4),round(r_value**2,3), \
+             round(RMSE,3),round(slope,3),round(intercept,3)))
     plt.savefig("detail.png")
-    plt.close()
-          
+    plt.close()         
+# minx+.0*(maxx-minx), miny+.9*(maxy-miny)
         
 def extractseries(x, y, dbtable, dbfile, query, lab):
     import sqlite3 as lite
@@ -171,7 +177,7 @@ os.chdir(dname)
 os.chdir('..')
 os.chdir('..')                            #navigate TWO directories higher
 dirmain = os.getcwd()
-dirres = dirmain+"/results/2013-09-28,20.24"
+dirres = dirmain+"/results/2013-10-01,14.28- validation"
 dirrun = dirmain+"/runtable/006"
 dbfile = "switch.db"
 DDC_yield_column = "DDC_yield"
@@ -292,10 +298,10 @@ with con:
 # Arguements: 'xlabel', 'ylable', x 'SQL column', y 'SQL column', #divisions, divisor 'SQL column'
 # multiplot("Avg site Precip", "Measured yield", "Avg_precip", "AVG_yield", 5, "SGN1_rate", \
 #           viewname2, dbfile)
-multiplot("Measured yield", "Modeled yield", "AVG_yield", "AVG_DDC_yield", 0, "Study", \
-          viewname2, dbfile)
-# multiplot("Avg_precip", "Yield error", "Avg_precip", "error", 4, "Avg_GDD", \
+# multiplot("Measured yield", "Modeled yield", "AVG_yield", "AVG_DDC_yield", 0, "Study", \
 #           viewname2, dbfile)
+multiplot("N fertilizer rate (gN/m2)", "Yield error (Mg/ha)", "SGN1_rate", "error", 1, "Study", \
+          viewname2, dbfile)
 print
 print
 

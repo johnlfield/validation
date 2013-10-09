@@ -109,9 +109,9 @@ def multiplot(xname, yname, x, y, divisions, divisor, dbtable, dbfile):
             fullx = fullx+addx
             fully = fully+addy
         plt.legend(prop={'size':12})
-    plt.plot([0,30], [0,30], color="black")
+    plt.plot([0,35], [0,35], color="black")
     plt.plot((0,0), color="white")
-    plt.plot((0,30), color="white")
+    plt.plot((0,35), color="white")
     plt.title('%s vs. %s' % (yname,xname))
     plt.xlabel('%s' % (xname))
     plt.ylabel('%s' % (yname))
@@ -120,7 +120,12 @@ def multiplot(xname, yname, x, y, divisions, divisor, dbtable, dbfile):
     slope, intercept, r_value, p_value, std_err = stats.linregress(fullx,fully)
     RMSE = rmse(fullx,fully)
     n = len(fullx)
-    plt.text(2, 22, 'Combined regression: \nPearson coeff.=%s \np-value=%s \nR2=%s \
+    minx=min(fullx)
+    maxx=max(fullx)
+    miny=min(fully)
+    maxy=max(fully)
+    plt.plot([minx,maxx], [intercept+slope*minx,intercept+slope*maxx], color="grey")
+    plt.text(2, 27, 'Combined regression: \nPearson coeff.=%s \np-value=%s \nR2=%s \
              \nRMSE=%s \nn=%s' % (round(r_value,3),round(p_value,4),\
              round(r_value**2,3),round(RMSE,3),n))
     plt.savefig("detail.png")
@@ -171,7 +176,7 @@ os.chdir(dname)
 os.chdir('..')
 os.chdir('..')                            #navigate TWO directories higher
 dirmain = os.getcwd()
-dirres = dirmain+"/results/2013-09-28,20.24"
+dirres = dirmain+"/results/2013-10-01,00.42"
 dirrun = dirmain+"/runtable/006"
 dbfile = "switch.db"
 DDC_yield_column = "DDC_yield"
